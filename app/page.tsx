@@ -160,39 +160,46 @@ function contrastRatio(first: string, second: string) {
 }
 
 function decorationPoints(shape: ShapeType) {
-  if (shape !== 'hexagon' && shape !== 'triangle') return [];
   const points: { x: number; y: number; r: number }[] = [];
-  for (let y = 32; y <= 728; y += 28) {
-    for (let x = 32; x <= 728; x += 28) {
+  for (let y = 30; y <= 730; y += 18) {
+    for (let x = 30; x <= 730; x += 18) {
       const jitter = ((x * 17 + y * 31) % 9) - 4;
       const px = x + jitter;
+      const insideCircle = Math.hypot(px - 380, y - 380) <= 355;
+      const insideSquare = px >= 28 && px <= 732 && y >= 28 && y <= 732;
       const insideHex =
         px >= 18 + Math.abs(y - 380) * 0.49 &&
         px <= 742 - Math.abs(y - 380) * 0.49;
       const halfWidth = Math.max(0, (y - 18) * 0.505);
       const insideTriangle =
         y >= 18 && px >= 380 - halfWidth && px <= 380 + halfWidth;
+      const masks = {
+        circle: insideCircle,
+        square: insideSquare,
+        hexagon: insideHex,
+        triangle: insideTriangle,
+      };
       const outsideCore =
-        shape === 'hexagon'
-          ? !(px > 70 && px < 690 && y > 70 && y < 690)
-          : !(px > 140 && px < 620 && y > 212 && y < 748);
-      if (
-        (shape === 'hexagon' ? insideHex : insideTriangle) &&
-        outsideCore &&
-        (x + y) % 84 !== 0
-      ) {
-        points.push({ x: px, y, r: 7 + ((x + y) % 3) });
+        shape === 'triangle'
+          ? !(px > 140 && px < 620 && y > 210 && y < 748)
+          : !(px > 82 && px < 678 && y > 82 && y < 678);
+      if (masks[shape] && outsideCore && (x * 3 + y * 5) % 13 !== 0) {
+        points.push({ x: px, y, r: 5 + ((x + y) % 2) });
       }
     }
   }
   return points;
 }
 
-function decorativeSvg(shape: ShapeType, color: string) {
+function decorativeSvg(shape: ShapeType, color: string, style: DotStyle) {
   return decorationPoints(shape)
-    .map(
-      ({ x, y, r }) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${color}"/>`,
-    )
+    .map(({ x, y, r }) => {
+      if (style === 'dots') {
+        return `<circle cx="${x}" cy="${y}" r="${r}" fill="${color}"/>`;
+      }
+      const radius = style === 'square' || style === 'classy' ? 1.5 : r;
+      return `<rect x="${x - r}" y="${y - r}" width="${r * 2}" height="${r * 2}" rx="${radius}" fill="${color}"/>`;
+    })
     .join('');
 }
 
@@ -460,7 +467,7 @@ export default function Home() {
       triangle: `<polygon points="380,18 744,735 16,735" fill="${backgroundColor}"/>`,
     };
     const current = placements[shape];
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="760" height="760" viewBox="0 0 760 760">${backgrounds[shape]}${decorativeSvg(shape, color)}<svg x="${current.x}" y="${current.y}" width="${current.size}" height="${current.size}" viewBox="0 0 640 640">${inner}</svg></svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="760" height="760" viewBox="0 0 760 760">${backgrounds[shape]}${decorativeSvg(shape, color, dotStyle)}<svg x="${current.x}" y="${current.y}" width="${current.size}" height="${current.size}" viewBox="0 0 640 640">${inner}</svg></svg>`;
   }
 
   async function download(extension: 'png' | 'svg') {
@@ -562,14 +569,14 @@ export default function Home() {
               <legend className="mb-3 text-sm font-semibold">
                 1. Choose what it does
               </legend>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="choice-strip grid grid-cols-4 gap-2">
                 {CONTENT_TYPES.map(({ value, label, icon: Icon }) => (
                   <button
                     key={value}
                     type="button"
                     onClick={() => setContentType(value)}
                     aria-pressed={contentType === value}
-                    className="flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-xl border px-2 text-xs font-medium transition hover:border-primary aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+                    className="choice-card flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-xl border bg-background px-2 text-xs font-medium transition hover:-translate-y-0.5 hover:border-primary hover:shadow-sm aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
                   >
                     <Icon className="size-4" />
                     {label}
@@ -590,14 +597,14 @@ export default function Home() {
               <legend className="mb-3 text-sm font-semibold">
                 2. Pick a silhouette
               </legend>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="choice-strip grid grid-cols-4 gap-2">
                 {SHAPES.map(({ value, label }) => (
                   <button
                     key={value}
                     type="button"
                     onClick={() => setShape(value)}
                     aria-pressed={shape === value}
-                    className="rounded-xl border px-2 py-3 text-xs font-medium transition hover:border-primary aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+                    className="choice-card rounded-xl border bg-background px-2 py-3 text-xs font-medium transition hover:-translate-y-0.5 hover:border-primary hover:shadow-sm aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
                   >
                     <span className={`shape-swatch shape-swatch-${value}`} />
                     {label}
@@ -610,14 +617,14 @@ export default function Home() {
               <legend className="mb-3 text-sm font-semibold">
                 3. Style the modules
               </legend>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="choice-strip grid grid-cols-3 gap-2">
                 {DOT_STYLES.map(({ value, label }) => (
                   <button
                     key={value}
                     type="button"
                     onClick={() => setDotStyle(value)}
                     aria-pressed={dotStyle === value}
-                    className="rounded-xl border px-2 py-2.5 text-xs font-medium transition hover:border-primary aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+                    className="choice-card min-h-11 rounded-xl border bg-background px-2 py-2.5 text-xs font-medium transition hover:-translate-y-0.5 hover:border-primary hover:shadow-sm aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
                   >
                     {label}
                   </button>
@@ -757,15 +764,31 @@ export default function Home() {
                   viewBox="0 0 760 760"
                   aria-hidden="true"
                 >
-                  {decorationPoints(shape).map(({ x, y, r }) => (
-                    <circle
-                      key={`${x}-${y}`}
-                      cx={x}
-                      cy={y}
-                      r={r}
-                      fill={color}
-                    />
-                  ))}
+                  {decorationPoints(shape).map(({ x, y, r }) =>
+                    dotStyle === 'dots' ? (
+                      <circle
+                        key={`${x}-${y}`}
+                        cx={x}
+                        cy={y}
+                        r={r}
+                        fill={color}
+                      />
+                    ) : (
+                      <rect
+                        key={`${x}-${y}`}
+                        x={x - r}
+                        y={y - r}
+                        width={r * 2}
+                        height={r * 2}
+                        rx={
+                          dotStyle === 'square' || dotStyle === 'classy'
+                            ? 1.5
+                            : r
+                        }
+                        fill={color}
+                      />
+                    ),
+                  )}
                 </svg>
               )}
               <div

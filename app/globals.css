@@ -177,6 +177,45 @@ body {
   .qr-canvas-triangle {
     width: 58%;
   }
+
+  [data-slot='dialog-overlay'] {
+    background: transparent !important;
+    backdrop-filter: none !important;
+  }
+
+  [data-slot='dialog-content'] {
+    top: auto !important;
+    bottom: 0;
+    max-width: 100% !important;
+    max-height: 78dvh !important;
+    transform: translateX(-50%) !important;
+    border-radius: 24px 24px 0 0 !important;
+    box-shadow: 0 -18px 50px rgb(0 0 0 / 14%);
+  }
+}
+
+@media (max-width: 639px) {
+  .choice-strip {
+    display: grid;
+    grid-template-columns: none !important;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(88px, 1fr);
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scroll-snap-type: inline mandatory;
+    scrollbar-width: none;
+    padding: 2px 2px 7px;
+  }
+
+  .choice-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  .choice-card {
+    min-height: 64px;
+    scroll-snap-align: start;
+    touch-action: manipulation;
+  }
 }
 
 .dark {
