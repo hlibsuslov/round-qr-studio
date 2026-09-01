@@ -4,26 +4,27 @@ import './globals.css';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
-  subsets: ['latin', 'cyrillic'],
+  subsets: ['latin'],
 });
 const geistMono = Geist_Mono({
   variable: '--font-geist-mono',
-  subsets: ['latin', 'cyrillic'],
+  subsets: ['latin'],
 });
 
 export const metadata: Metadata = {
-  title: 'Round QR Studio — генератор круглых QR-кодов',
+  metadataBase: new URL('https://round-qr-studio.hlixli.chatgpt.site'),
+  title: 'Round QR Studio — Shape your scan',
   description:
-    'Создайте круглый сканируемый QR-код и скачайте его в PNG или SVG.',
+    'Create shaped QR codes for links, contacts, email, phone, SMS, Wi-Fi and calendar events.',
   openGraph: {
     title: 'Round QR Studio',
-    description: 'Круглый QR-код, который сканируется. PNG, SVG, open source.',
+    description: 'Shape your scan. Links, contacts, Wi-Fi and more.',
     images: [{ url: '/og.png', width: 1200, height: 630 }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Round QR Studio',
-    description: 'Круглый QR-код, который сканируется. PNG, SVG, open source.',
+    description: 'Shape your scan. Links, contacts, Wi-Fi and more.',
     images: ['/og.png'],
   },
 };
@@ -32,7 +33,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="ru">
+    <html lang="en">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

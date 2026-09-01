@@ -93,6 +93,76 @@ body {
   }
 }
 
+.shape-swatch {
+  display: block;
+  width: 24px;
+  height: 24px;
+  margin: 0 auto 6px;
+  background: currentColor;
+}
+
+.shape-swatch-circle {
+  border-radius: 999px;
+}
+.shape-swatch-square {
+  border-radius: 5px;
+}
+.shape-swatch-hexagon {
+  clip-path: polygon(25% 6%, 75% 6%, 100% 50%, 75% 94%, 25% 94%, 0 50%);
+}
+.shape-swatch-triangle {
+  clip-path: polygon(50% 3%, 98% 96%, 2% 96%);
+}
+
+.qr-shape {
+  position: relative;
+  display: grid;
+  width: min(100%, 600px);
+  aspect-ratio: 1;
+  place-items: center;
+  background: white;
+  filter: drop-shadow(0 34px 45px rgb(28 38 10 / 18%));
+  transition:
+    clip-path 280ms ease,
+    border-radius 280ms ease;
+}
+
+.qr-shape-circle {
+  border-radius: 999px;
+}
+.qr-shape-square {
+  border-radius: 11%;
+}
+.qr-shape-hexagon {
+  clip-path: polygon(25% 2%, 75% 2%, 98% 50%, 75% 98%, 25% 98%, 2% 50%);
+}
+.qr-shape-triangle {
+  clip-path: polygon(50% 1%, 98% 98%, 2% 98%);
+}
+
+.qr-canvas {
+  position: relative;
+  z-index: 10;
+  aspect-ratio: 1;
+  transition:
+    width 280ms ease,
+    transform 280ms ease;
+}
+
+.qr-canvas-circle {
+  width: 84%;
+}
+.qr-canvas-square {
+  width: 86%;
+}
+.qr-canvas-hexagon {
+  width: 74%;
+}
+.qr-canvas-triangle {
+  width: 56%;
+  transform: translateY(23%);
+}
+
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
