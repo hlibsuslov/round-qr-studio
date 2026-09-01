@@ -163,6 +163,22 @@ body {
   transform: translateY(23%);
 }
 
+@media (max-width: 767px) {
+  [data-slot='input'],
+  [data-slot='textarea'],
+  [data-slot='combobox-input'] {
+    font-size: 16px !important;
+  }
+
+  [data-slot='select-trigger'] {
+    min-height: 44px;
+  }
+
+  .qr-canvas-triangle {
+    width: 58%;
+  }
+}
+
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);

@@ -9,6 +9,7 @@ import {
   type SetStateAction,
 } from 'react';
 import {
+  ArrowLeftRight,
   CalendarDays,
   Check,
   ContactRound,
@@ -20,11 +21,31 @@ import {
   MessageSquare,
   Phone,
   QrCode,
+  Search,
   ShieldCheck,
+  Sparkles,
   Wifi,
+  X,
 } from 'lucide-react';
+import { Icon } from '@iconify/react';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 
 type ContentType =
@@ -77,6 +98,103 @@ const DOT_STYLES: { value: DotStyle; label: string }[] = [
   { value: 'classy-rounded', label: 'Flow' },
   { value: 'extra-rounded', label: 'Pills' },
 ];
+
+const FOREGROUND_PRESETS = [
+  '#11130f',
+  '#173c2b',
+  '#153e75',
+  '#5b21b6',
+  '#9f1239',
+  '#ffffff',
+];
+const BACKGROUND_PRESETS = [
+  '#ffffff',
+  '#f4f1e8',
+  '#dff86a',
+  '#dff5ff',
+  '#f3e8ff',
+  '#11130f',
+];
+const CURATED_ICONS = [
+  'mdi:account',
+  'mdi:web',
+  'mdi:email',
+  'mdi:phone',
+  'mdi:wifi',
+  'mdi:map-marker',
+  'mdi:calendar',
+  'mdi:heart',
+  'mdi:star',
+  'mdi:instagram',
+  'mdi:linkedin',
+  'mdi:cart',
+  'mdi:ticket',
+  'mdi:coffee',
+  'mdi:food',
+  'mdi:music',
+  'mdi:camera',
+  'mdi:briefcase',
+  'mdi:home',
+  'mdi:airplane',
+  'mdi:gift',
+  'mdi:lightning-bolt',
+  'mdi:check-circle',
+  'mdi:arrow-right',
+];
+
+function luminance(hex: string) {
+  const rgb = hex
+    .replace('#', '')
+    .match(/.{2}/g)
+    ?.map((value) => parseInt(value, 16) / 255) ?? [0, 0, 0];
+  const linear = rgb.map((value) =>
+    value <= 0.03928 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4),
+  );
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+}
+
+function contrastRatio(first: string, second: string) {
+  const high = Math.max(luminance(first), luminance(second));
+  const low = Math.min(luminance(first), luminance(second));
+  return (high + 0.05) / (low + 0.05);
+}
+
+function decorationPoints(shape: ShapeType) {
+  if (shape !== 'hexagon' && shape !== 'triangle') return [];
+  const points: { x: number; y: number; r: number }[] = [];
+  for (let y = 32; y <= 728; y += 28) {
+    for (let x = 32; x <= 728; x += 28) {
+      const jitter = ((x * 17 + y * 31) % 9) - 4;
+      const px = x + jitter;
+      const insideHex =
+        px >= 18 + Math.abs(y - 380) * 0.49 &&
+        px <= 742 - Math.abs(y - 380) * 0.49;
+      const halfWidth = Math.max(0, (y - 18) * 0.505);
+      const insideTriangle =
+        y >= 18 && px >= 380 - halfWidth && px <= 380 + halfWidth;
+      const outsideCore =
+        shape === 'hexagon'
+          ? !(px > 70 && px < 690 && y > 70 && y < 690)
+          : !(px > 140 && px < 620 && y > 212 && y < 748);
+      if (
+        (shape === 'hexagon' ? insideHex : insideTriangle) &&
+        outsideCore &&
+        (x + y) % 84 !== 0
+      ) {
+        points.push({ x: px, y, r: 7 + ((x + y) % 3) });
+      }
+    }
+  }
+  return points;
+}
+
+function decorativeSvg(shape: ShapeType, color: string) {
+  return decorationPoints(shape)
+    .map(
+      ({ x, y, r }) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${color}"/>`,
+    )
+    .join('');
+}
 
 const INITIAL_FIELDS: Fields = {
   url: '',
@@ -197,6 +315,7 @@ function qrOptions(
   dotStyle: DotStyle,
   eyeStyle: EyeStyle,
   shape: ShapeType,
+  iconData: string,
 ) {
   return {
     width: 640,
@@ -204,6 +323,7 @@ function qrOptions(
     type: 'svg' as const,
     shape: shape === 'circle' ? ('circle' as const) : ('square' as const),
     data: payload || ' ',
+    image: iconData || undefined,
     margin: 46,
     qrOptions: { errorCorrectionLevel: 'H' as const },
     dotsOptions: { color, type: dotStyle },
@@ -213,6 +333,11 @@ function qrOptions(
       type: eyeStyle === 'square' ? ('square' as const) : ('dot' as const),
     },
     backgroundOptions: { color: 'rgba(255,255,255,0)' },
+    imageOptions: {
+      hideBackgroundDots: true,
+      imageSize: 0.24,
+      margin: 8,
+    },
   };
 }
 
@@ -254,8 +379,11 @@ export default function Home() {
   const [fields, setFields] = useState<Fields>(INITIAL_FIELDS);
   const [shape, setShape] = useState<ShapeType>('circle');
   const [color, setColor] = useState('#11130f');
+  const [backgroundColor, setBackgroundColor] = useState('#ffffff');
   const [dotStyle, setDotStyle] = useState<DotStyle>('dots');
   const [eyeStyle, setEyeStyle] = useState<EyeStyle>('extra-rounded');
+  const [selectedIcon, setSelectedIcon] = useState('');
+  const [iconData, setIconData] = useState('');
   const [copied, setCopied] = useState(false);
   const [ready, setReady] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -264,13 +392,38 @@ export default function Home() {
     () => buildPayload(contentType, fields),
     [contentType, fields],
   );
+  const contrast = contrastRatio(color, backgroundColor);
+
+  useEffect(() => {
+    if (!selectedIcon) {
+      setIconData('');
+      return;
+    }
+    const [prefix, ...parts] = selectedIcon.split(':');
+    const name = parts.join(':');
+    const controller = new AbortController();
+    fetch(
+      `https://api.iconify.design/${prefix}/${name}.svg?color=${encodeURIComponent(color)}`,
+      { signal: controller.signal },
+    )
+      .then((response) =>
+        response.ok
+          ? response.text()
+          : Promise.reject(new Error('Icon unavailable')),
+      )
+      .then((svg) =>
+        setIconData(`data:image/svg+xml,${encodeURIComponent(svg)}`),
+      )
+      .catch(() => setIconData(''));
+    return () => controller.abort();
+  }, [selectedIcon, color]);
 
   useEffect(() => {
     let cancelled = false;
     import('qr-code-styling').then(({ default: QRCodeStyling }) => {
       if (cancelled || !containerRef.current) return;
       const qr = new QRCodeStyling(
-        qrOptions(payload, color, dotStyle, eyeStyle, shape),
+        qrOptions(payload, color, dotStyle, eyeStyle, shape, iconData),
       );
       qr.append(containerRef.current);
       qrRef.current = qr as unknown as QRInstance;
@@ -283,45 +436,31 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    qrRef.current?.update(qrOptions(payload, color, dotStyle, eyeStyle, shape));
-  }, [payload, color, dotStyle, eyeStyle, shape]);
+    qrRef.current?.update(
+      qrOptions(payload, color, dotStyle, eyeStyle, shape, iconData),
+    );
+  }, [payload, color, dotStyle, eyeStyle, shape, iconData]);
 
   function compositeSvg() {
     const inner = containerRef.current?.querySelector('svg')?.outerHTML;
     if (!inner) return '';
     const placements: Record<
       ShapeType,
-      { x: number; y: number; size: number; background: string }
+      { x: number; y: number; size: number }
     > = {
-      circle: {
-        x: 70,
-        y: 70,
-        size: 620,
-        background: '<circle cx="380" cy="380" r="360" fill="white"/>',
-      },
-      square: {
-        x: 70,
-        y: 70,
-        size: 620,
-        background:
-          '<rect x="25" y="25" width="710" height="710" rx="58" fill="white"/>',
-      },
-      hexagon: {
-        x: 100,
-        y: 100,
-        size: 560,
-        background:
-          '<polygon points="190,25 570,25 745,380 570,735 190,735 15,380" fill="white"/>',
-      },
-      triangle: {
-        x: 170,
-        y: 245,
-        size: 420,
-        background: '<polygon points="380,18 744,735 16,735" fill="white"/>',
-      },
+      circle: { x: 70, y: 70, size: 620 },
+      square: { x: 70, y: 70, size: 620 },
+      hexagon: { x: 100, y: 100, size: 560 },
+      triangle: { x: 170, y: 245, size: 420 },
+    };
+    const backgrounds: Record<ShapeType, string> = {
+      circle: `<circle cx="380" cy="380" r="360" fill="${backgroundColor}"/>`,
+      square: `<rect x="25" y="25" width="710" height="710" rx="58" fill="${backgroundColor}"/>`,
+      hexagon: `<polygon points="190,25 570,25 745,380 570,735 190,735 15,380" fill="${backgroundColor}"/>`,
+      triangle: `<polygon points="380,18 744,735 16,735" fill="${backgroundColor}"/>`,
     };
     const current = placements[shape];
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="760" height="760" viewBox="0 0 760 760">${current.background}<svg x="${current.x}" y="${current.y}" width="${current.size}" height="${current.size}" viewBox="0 0 640 640">${inner}</svg></svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="760" height="760" viewBox="0 0 760 760">${backgrounds[shape]}${decorativeSvg(shape, color)}<svg x="${current.x}" y="${current.y}" width="${current.size}" height="${current.size}" viewBox="0 0 640 640">${inner}</svg></svg>`;
   }
 
   async function download(extension: 'png' | 'svg') {
@@ -371,6 +510,24 @@ export default function Home() {
     window.setTimeout(() => setCopied(false), 1600);
   }
 
+  function applyForeground(next: string) {
+    setColor(next);
+    if (contrastRatio(next, backgroundColor) < 4.5) {
+      setBackgroundColor(luminance(next) > 0.5 ? '#11130f' : '#ffffff');
+    }
+  }
+
+  function applyBackground(next: string) {
+    setBackgroundColor(next);
+    if (contrastRatio(color, next) < 4.5) {
+      setColor(luminance(next) > 0.5 ? '#11130f' : '#ffffff');
+    }
+  }
+
+  function makeHighContrast() {
+    setColor(luminance(backgroundColor) > 0.5 ? '#11130f' : '#ffffff');
+  }
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <header className="mx-auto flex w-full max-w-[1440px] items-center justify-between px-5 py-5 sm:px-8 lg:px-10">
@@ -392,10 +549,7 @@ export default function Home() {
 
       <section className="mx-auto grid w-full max-w-[1440px] gap-6 px-5 pb-10 sm:px-8 lg:grid-cols-[minmax(470px,0.95fr)_minmax(500px,1.05fr)] lg:px-10 lg:pb-14">
         <div className="rounded-[30px] border bg-card p-5 shadow-[0_20px_70px_rgba(13,24,18,0.06)] sm:p-7">
-          <span className="inline-flex rounded-full bg-accent/12 px-3 py-1.5 text-xs font-semibold text-accent">
-            DESIGN / ENCODE / SCAN
-          </span>
-          <h1 className="mt-5 text-4xl font-semibold leading-[1.02] tracking-[-0.045em] sm:text-5xl">
+          <h1 className="text-4xl font-semibold leading-[1.02] tracking-[-0.045em] sm:text-5xl">
             Shape your scan.
           </h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
@@ -471,38 +625,110 @@ export default function Home() {
               </div>
             </fieldset>
 
-            <div className="grid grid-cols-2 gap-3">
-              <label className="flex items-center justify-between rounded-2xl border bg-background p-3">
-                <span>
-                  <span className="block text-xs font-semibold">QR color</span>
-                  <span className="font-mono text-[11px] uppercase text-muted-foreground">
-                    {color}
+            <div>
+              <p className="mb-3 text-sm font-semibold">
+                4. Refine the details
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">
+                    Finder style
                   </span>
-                </span>
-                <input
-                  aria-label="QR color"
-                  className="h-9 w-12 cursor-pointer rounded-lg border bg-transparent p-1"
-                  type="color"
-                  value={color}
-                  onChange={(event) => setColor(event.target.value)}
-                />
-              </label>
-              <label className="rounded-2xl border bg-background p-3">
-                <span className="mb-1 block text-xs font-semibold">
-                  Finder style
-                </span>
-                <select
-                  className="w-full bg-transparent text-xs outline-none"
-                  value={eyeStyle}
-                  onChange={(event) =>
-                    setEyeStyle(event.target.value as EyeStyle)
-                  }
+                  <Select
+                    value={eyeStyle}
+                    onValueChange={(value) => setEyeStyle(value as EyeStyle)}
+                  >
+                    <SelectTrigger className="h-11 w-full rounded-xl bg-background px-3 text-sm shadow-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent
+                      align="start"
+                      className="rounded-xl p-1 shadow-xl"
+                    >
+                      <SelectItem value="extra-rounded" className="py-2.5">
+                        Rounded corners
+                      </SelectItem>
+                      <SelectItem value="dot" className="py-2.5">
+                        Circular eyes
+                      </SelectItem>
+                      <SelectItem value="square" className="py-2.5">
+                        Classic square
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">
+                    Center icon
+                  </span>
+                  <div className="flex gap-2">
+                    <IconPicker
+                      selected={selectedIcon}
+                      onSelect={setSelectedIcon}
+                    />
+                    {selectedIcon && (
+                      <Button
+                        variant="outline"
+                        size="icon-lg"
+                        className="h-11 rounded-xl"
+                        aria-label="Remove center icon"
+                        onClick={() => setSelectedIcon('')}
+                      >
+                        <X />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold">
+                  5. Choose a contrast-safe palette
+                </p>
+                <span
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${contrast >= 4.5 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}
                 >
-                  <option value="extra-rounded">Rounded</option>
-                  <option value="dot">Circular</option>
-                  <option value="square">Square</option>
-                </select>
-              </label>
+                  {contrast.toFixed(1)}:1 contrast
+                </span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <ColorPicker
+                  label="QR modules"
+                  value={color}
+                  presets={FOREGROUND_PRESETS}
+                  onChange={applyForeground}
+                />
+                <ColorPicker
+                  label="Shape background"
+                  value={backgroundColor}
+                  presets={BACKGROUND_PRESETS}
+                  onChange={applyBackground}
+                />
+              </div>
+              <div className="mt-3 flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 rounded-xl"
+                  onClick={() => {
+                    const previous = color;
+                    setColor(backgroundColor);
+                    setBackgroundColor(previous);
+                  }}
+                >
+                  <ArrowLeftRight /> Swap colors
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 rounded-xl"
+                  onClick={makeHighContrast}
+                >
+                  <Sparkles /> Auto contrast
+                </Button>
+              </div>
             </div>
           </div>
 
@@ -512,7 +738,7 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="sticky top-4 flex min-h-[720px] flex-col overflow-hidden rounded-[30px] bg-[#dff86a] p-5 sm:p-8 lg:h-[calc(100vh-32px)] lg:max-h-[940px]">
+        <div className="flex min-h-[620px] flex-col overflow-hidden rounded-[30px] bg-[#dff86a] p-5 sm:min-h-[720px] sm:p-8 lg:sticky lg:top-4 lg:h-[calc(100vh-32px)] lg:max-h-[940px]">
           <div className="pointer-events-none absolute -right-20 -top-20 size-64 rounded-full border-[44px] border-black/[0.045]" />
           <div className="relative z-10 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.16em] text-black/55">
             <span>{shape} preview</span>
@@ -521,7 +747,27 @@ export default function Home() {
             </span>
           </div>
           <div className="relative z-10 flex flex-1 items-center justify-center py-8">
-            <div className={`qr-shape qr-shape-${shape}`}>
+            <div
+              className={`qr-shape qr-shape-${shape}`}
+              style={{ backgroundColor }}
+            >
+              {decorationPoints(shape).length > 0 && (
+                <svg
+                  className="pointer-events-none absolute inset-0 z-[5] h-full w-full"
+                  viewBox="0 0 760 760"
+                  aria-hidden="true"
+                >
+                  {decorationPoints(shape).map(({ x, y, r }) => (
+                    <circle
+                      key={`${x}-${y}`}
+                      cx={x}
+                      cy={y}
+                      r={r}
+                      fill={color}
+                    />
+                  ))}
+                </svg>
+              )}
               <div
                 ref={containerRef}
                 className={`qr-canvas qr-canvas-${shape} ${payload ? '' : 'opacity-0'} [&>svg]:h-full [&>svg]:w-full`}
@@ -532,7 +778,10 @@ export default function Home() {
                 }
               />
               {!payload && (
-                <div className="absolute inset-0 z-20 grid place-items-center px-16 text-center text-sm font-semibold text-black/50">
+                <div
+                  className="absolute inset-0 z-20 grid place-items-center px-16 text-center text-sm font-semibold"
+                  style={{ color }}
+                >
                   Enter the details on the left to create your QR code.
                 </div>
               )}
@@ -572,6 +821,175 @@ export default function Home() {
         </div>
       </section>
     </main>
+  );
+}
+
+function ColorPicker({
+  label,
+  value,
+  presets,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  presets: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="rounded-2xl border bg-background p-3">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-xs font-semibold">{label}</span>
+        <label className="flex cursor-pointer items-center gap-2 rounded-lg border bg-white px-2 py-1.5">
+          <span className="font-mono text-[10px] uppercase text-muted-foreground">
+            {value}
+          </span>
+          <span
+            className="size-5 rounded-md border"
+            style={{ backgroundColor: value }}
+          />
+          <input
+            className="sr-only"
+            aria-label={`Custom ${label} color`}
+            type="color"
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+          />
+        </label>
+      </div>
+      <div className="grid grid-cols-6 gap-2">
+        {presets.map((preset) => (
+          <button
+            key={preset}
+            type="button"
+            aria-label={`Use color ${preset}`}
+            aria-pressed={value === preset}
+            onClick={() => onChange(preset)}
+            className="aspect-square rounded-lg border border-black/10 shadow-sm outline-none transition hover:scale-105 focus-visible:ring-2 focus-visible:ring-ring aria-pressed:ring-2 aria-pressed:ring-black"
+            style={{ backgroundColor: preset }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function IconPicker({
+  selected,
+  onSelect,
+}: {
+  selected: string;
+  onSelect: (icon: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<string[]>(CURATED_ICONS);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const clean = query.trim();
+    if (clean.length < 2) {
+      setResults(CURATED_ICONS);
+      setLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      fetch(
+        `https://api.iconify.design/search?query=${encodeURIComponent(clean)}&limit=96`,
+        { signal: controller.signal },
+      )
+        .then(
+          async (response) => (await response.json()) as { icons?: string[] },
+        )
+        .then((data) => setResults(data.icons ?? []))
+        .catch(() => setResults([]))
+        .finally(() => setLoading(false));
+    }, 280);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query]);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger
+        render={
+          <Button
+            variant="outline"
+            className="h-11 flex-1 justify-start rounded-xl bg-background px-3"
+          />
+        }
+      >
+        {selected ? (
+          <>
+            <Icon icon={selected} className="size-5" />
+            <span className="min-w-0 truncate">{selected}</span>
+          </>
+        ) : (
+          <>
+            <Search />
+            <span>Browse icons</span>
+          </>
+        )}
+      </DialogTrigger>
+      <DialogContent className="max-h-[min(760px,calc(100vh-2rem))] max-w-2xl overflow-hidden rounded-3xl p-0">
+        <DialogHeader className="border-b p-5 pr-14">
+          <DialogTitle className="text-xl">Choose a center icon</DialogTitle>
+          <DialogDescription>
+            Search more than 300,000 open-source SVG icons from Iconify. The
+            selected SVG is embedded into your download.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="px-5 pt-1">
+          <label className="flex h-12 items-center gap-2 rounded-xl border bg-background px-3 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20">
+            <Search className="size-4 text-muted-foreground" />
+            <Input
+              className="h-full border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search icons: coffee, camera, arrow…"
+              autoFocus
+            />
+          </label>
+        </div>
+        <div className="min-h-56 overflow-y-auto px-5 pb-5">
+          {loading ? (
+            <div className="grid min-h-56 place-items-center text-sm text-muted-foreground">
+              Searching Iconify…
+            </div>
+          ) : results.length ? (
+            <div className="grid grid-cols-6 gap-2 pt-3 sm:grid-cols-8">
+              {results.map((icon) => (
+                <button
+                  key={icon}
+                  type="button"
+                  title={icon}
+                  onClick={() => {
+                    onSelect(icon);
+                    setOpen(false);
+                  }}
+                  className="grid aspect-square place-items-center rounded-xl border bg-background text-foreground transition hover:-translate-y-0.5 hover:border-primary hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Icon icon={icon} className="size-6" />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="grid min-h-56 place-items-center text-sm text-muted-foreground">
+              No icons found. Try another keyword.
+            </div>
+          )}
+        </div>
+        <div className="flex items-center justify-between border-t bg-muted/40 px-5 py-3 text-xs text-muted-foreground">
+          <span>Powered by Iconify open-source icon sets</span>
+          <DialogClose render={<Button variant="ghost" size="sm" />}>
+            Close
+          </DialogClose>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -688,25 +1106,35 @@ function ContentFields({
           setFields={setFields}
           placeholder="Network password"
         />
-        <label>
+        <div>
           <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">
             Security
           </span>
-          <select
-            className="h-10 w-full rounded-xl border bg-white px-3 text-sm"
+          <Select
             value={fields.encryption}
-            onChange={(event) =>
+            onValueChange={(value) =>
               setFields((current) => ({
                 ...current,
-                encryption: event.target.value,
+                encryption: value as string,
               }))
             }
           >
-            <option value="WPA">WPA / WPA2</option>
-            <option value="WEP">WEP</option>
-            <option value="nopass">No password</option>
-          </select>
-        </label>
+            <SelectTrigger className="h-10 w-full rounded-xl bg-white px-3">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="start" className="rounded-xl p-1 shadow-xl">
+              <SelectItem value="WPA" className="py-2.5">
+                WPA / WPA2
+              </SelectItem>
+              <SelectItem value="WEP" className="py-2.5">
+                WEP
+              </SelectItem>
+              <SelectItem value="nopass" className="py-2.5">
+                No password
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <label className="flex items-end gap-2 pb-2 text-xs font-medium">
           <input
             type="checkbox"
