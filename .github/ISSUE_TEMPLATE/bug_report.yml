@@ -1,0 +1,47 @@
+name: Bug report
+description: Report a reproducible problem in Round QR Studio
+title: '[Bug]: '
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to report a problem. Do not include private QR payloads.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Choose ...
+        2. Enter ...
+        3. Click ...
+    validations:
+      required: true
+  - type: dropdown
+    id: output
+    attributes:
+      label: Where is the problem visible?
+      multiple: true
+      options:
+        - Browser preview
+        - PNG export
+        - SVG export
+        - Scanning the QR code
+  - type: input
+    id: environment
+    attributes:
+      label: Browser and device
+      placeholder: Chrome 128 on Windows 11
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add screenshots or other useful details. Remove sensitive data first.

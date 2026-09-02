@@ -163,6 +163,12 @@ body {
   transform: translateY(23%);
 }
 
+@media (min-width: 1024px) {
+  .qr-preview-stage .qr-shape {
+    width: min(100%, 600px, calc(100vh - 280px));
+  }
+}
+
 @media (max-width: 767px) {
   [data-slot='input'],
   [data-slot='textarea'],

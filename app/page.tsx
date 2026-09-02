@@ -13,6 +13,7 @@ import {
   CalendarDays,
   Check,
   ContactRound,
+  Code2,
   Copy,
   Download,
   FileText,
@@ -160,46 +161,39 @@ function contrastRatio(first: string, second: string) {
 }
 
 function decorationPoints(shape: ShapeType) {
+  if (shape !== 'hexagon' && shape !== 'triangle') return [];
   const points: { x: number; y: number; r: number }[] = [];
-  for (let y = 30; y <= 730; y += 18) {
-    for (let x = 30; x <= 730; x += 18) {
+  for (let y = 32; y <= 728; y += 28) {
+    for (let x = 32; x <= 728; x += 28) {
       const jitter = ((x * 17 + y * 31) % 9) - 4;
       const px = x + jitter;
-      const insideCircle = Math.hypot(px - 380, y - 380) <= 355;
-      const insideSquare = px >= 28 && px <= 732 && y >= 28 && y <= 732;
       const insideHex =
         px >= 18 + Math.abs(y - 380) * 0.49 &&
         px <= 742 - Math.abs(y - 380) * 0.49;
       const halfWidth = Math.max(0, (y - 18) * 0.505);
       const insideTriangle =
         y >= 18 && px >= 380 - halfWidth && px <= 380 + halfWidth;
-      const masks = {
-        circle: insideCircle,
-        square: insideSquare,
-        hexagon: insideHex,
-        triangle: insideTriangle,
-      };
       const outsideCore =
-        shape === 'triangle'
-          ? !(px > 140 && px < 620 && y > 210 && y < 748)
-          : !(px > 82 && px < 678 && y > 82 && y < 678);
-      if (masks[shape] && outsideCore && (x * 3 + y * 5) % 13 !== 0) {
-        points.push({ x: px, y, r: 5 + ((x + y) % 2) });
+        shape === 'hexagon'
+          ? !(px > 70 && px < 690 && y > 70 && y < 690)
+          : !(px > 140 && px < 620 && y > 212 && y < 748);
+      if (
+        (shape === 'hexagon' ? insideHex : insideTriangle) &&
+        outsideCore &&
+        (x + y) % 84 !== 0
+      ) {
+        points.push({ x: px, y, r: 7 + ((x + y) % 3) });
       }
     }
   }
   return points;
 }
 
-function decorativeSvg(shape: ShapeType, color: string, style: DotStyle) {
+function decorativeSvg(shape: ShapeType, color: string) {
   return decorationPoints(shape)
-    .map(({ x, y, r }) => {
-      if (style === 'dots') {
-        return `<circle cx="${x}" cy="${y}" r="${r}" fill="${color}"/>`;
-      }
-      const radius = style === 'square' || style === 'classy' ? 1.5 : r;
-      return `<rect x="${x - r}" y="${y - r}" width="${r * 2}" height="${r * 2}" rx="${radius}" fill="${color}"/>`;
-    })
+    .map(
+      ({ x, y, r }) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${color}"/>`,
+    )
     .join('');
 }
 
@@ -400,12 +394,10 @@ export default function Home() {
     [contentType, fields],
   );
   const contrast = contrastRatio(color, backgroundColor);
+  const activeIconData = selectedIcon ? iconData : '';
 
   useEffect(() => {
-    if (!selectedIcon) {
-      setIconData('');
-      return;
-    }
+    if (!selectedIcon) return;
     const [prefix, ...parts] = selectedIcon.split(':');
     const name = parts.join(':');
     const controller = new AbortController();
@@ -427,10 +419,10 @@ export default function Home() {
 
   useEffect(() => {
     let cancelled = false;
-    import('qr-code-styling').then(({ default: QRCodeStyling }) => {
+    void import('qr-code-styling').then(({ default: QRCodeStyling }) => {
       if (cancelled || !containerRef.current) return;
       const qr = new QRCodeStyling(
-        qrOptions(payload, color, dotStyle, eyeStyle, shape, iconData),
+        qrOptions('', '#11130f', 'dots', 'extra-rounded', 'circle', ''),
       );
       qr.append(containerRef.current);
       qrRef.current = qr as unknown as QRInstance;
@@ -439,14 +431,13 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     qrRef.current?.update(
-      qrOptions(payload, color, dotStyle, eyeStyle, shape, iconData),
+      qrOptions(payload, color, dotStyle, eyeStyle, shape, activeIconData),
     );
-  }, [payload, color, dotStyle, eyeStyle, shape, iconData]);
+  }, [payload, color, dotStyle, eyeStyle, shape, activeIconData]);
 
   function compositeSvg() {
     const inner = containerRef.current?.querySelector('svg')?.outerHTML;
@@ -467,7 +458,7 @@ export default function Home() {
       triangle: `<polygon points="380,18 744,735 16,735" fill="${backgroundColor}"/>`,
     };
     const current = placements[shape];
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="760" height="760" viewBox="0 0 760 760">${backgrounds[shape]}${decorativeSvg(shape, color, dotStyle)}<svg x="${current.x}" y="${current.y}" width="${current.size}" height="${current.size}" viewBox="0 0 640 640">${inner}</svg></svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="760" height="760" viewBox="0 0 760 760">${backgrounds[shape]}${decorativeSvg(shape, color)}<svg x="${current.x}" y="${current.y}" width="${current.size}" height="${current.size}" viewBox="0 0 640 640">${inner}</svg></svg>`;
   }
 
   async function download(extension: 'png' | 'svg') {
@@ -549,9 +540,21 @@ export default function Home() {
             <p className="font-semibold tracking-tight">Round QR Studio</p>
           </div>
         </div>
-        <span className="hidden items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground sm:flex">
-          <ShieldCheck className="size-4 text-accent" /> High error correction
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="hidden items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground sm:flex">
+            <ShieldCheck className="size-4 text-accent" /> High error correction
+          </span>
+          <a
+            href="https://github.com/hlibsuslov/round-qr-studio"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex size-10 items-center justify-center rounded-full border bg-card text-foreground transition hover:-translate-y-0.5 hover:border-primary hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            aria-label="View Round QR Studio source on GitHub"
+            title="View source on GitHub"
+          >
+            <Code2 className="size-4" />
+          </a>
+        </div>
       </header>
 
       <section className="mx-auto grid w-full max-w-[1440px] gap-6 px-5 pb-10 sm:px-8 lg:grid-cols-[minmax(470px,0.95fr)_minmax(500px,1.05fr)] lg:px-10 lg:pb-14">
@@ -745,7 +748,7 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="flex min-h-[620px] flex-col overflow-hidden rounded-[30px] bg-[#dff86a] p-5 sm:min-h-[720px] sm:p-8 lg:sticky lg:top-4 lg:h-[calc(100vh-32px)] lg:max-h-[940px]">
+        <div className="relative flex min-h-[620px] flex-col overflow-hidden rounded-[30px] bg-[#dff86a] p-5 sm:min-h-[720px] sm:p-8 lg:sticky lg:top-4 lg:h-[calc(100vh-32px)] lg:min-h-0 lg:max-h-[940px]">
           <div className="pointer-events-none absolute -right-20 -top-20 size-64 rounded-full border-[44px] border-black/[0.045]" />
           <div className="relative z-10 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.16em] text-black/55">
             <span>{shape} preview</span>
@@ -753,7 +756,7 @@ export default function Home() {
               {ready ? (payload ? 'Ready' : 'Waiting for data') : 'Loading'}
             </span>
           </div>
-          <div className="relative z-10 flex flex-1 items-center justify-center py-8">
+          <div className="qr-preview-stage relative z-10 flex min-h-0 flex-1 items-center justify-center py-8">
             <div
               className={`qr-shape qr-shape-${shape}`}
               style={{ backgroundColor }}
@@ -764,31 +767,15 @@ export default function Home() {
                   viewBox="0 0 760 760"
                   aria-hidden="true"
                 >
-                  {decorationPoints(shape).map(({ x, y, r }) =>
-                    dotStyle === 'dots' ? (
-                      <circle
-                        key={`${x}-${y}`}
-                        cx={x}
-                        cy={y}
-                        r={r}
-                        fill={color}
-                      />
-                    ) : (
-                      <rect
-                        key={`${x}-${y}`}
-                        x={x - r}
-                        y={y - r}
-                        width={r * 2}
-                        height={r * 2}
-                        rx={
-                          dotStyle === 'square' || dotStyle === 'classy'
-                            ? 1.5
-                            : r
-                        }
-                        fill={color}
-                      />
-                    ),
-                  )}
+                  {decorationPoints(shape).map(({ x, y, r }) => (
+                    <circle
+                      key={`${x}-${y}`}
+                      cx={x}
+                      cy={y}
+                      r={r}
+                      fill={color}
+                    />
+                  ))}
                 </svg>
               )}
               <div
@@ -810,7 +797,7 @@ export default function Home() {
               )}
             </div>
           </div>
-          <div className="relative z-10 mb-3 flex items-center gap-2 rounded-2xl bg-black/[0.06] p-2 text-xs text-black/60">
+          <div className="relative z-10 mb-3 flex shrink-0 items-center gap-2 rounded-2xl bg-black/[0.06] p-2 text-xs text-black/60">
             <code className="min-w-0 flex-1 truncate px-2">
               {payload || 'No encoded data yet'}
             </code>
@@ -824,7 +811,7 @@ export default function Home() {
               {copied ? <Check /> : <Copy />}
             </Button>
           </div>
-          <div className="relative z-10 grid grid-cols-2 gap-3">
+          <div className="relative z-10 grid shrink-0 grid-cols-2 gap-3">
             <Button
               className="h-12 rounded-2xl bg-black text-white hover:bg-black/80"
               onClick={() => download('png')}
@@ -907,14 +894,11 @@ function IconPicker({
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<string[]>(CURATED_ICONS);
   const [loading, setLoading] = useState(false);
+  const visibleResults = query.trim().length < 2 ? CURATED_ICONS : results;
 
   useEffect(() => {
     const clean = query.trim();
-    if (clean.length < 2) {
-      setResults(CURATED_ICONS);
-      setLoading(false);
-      return;
-    }
+    if (clean.length < 2) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setLoading(true);
@@ -966,14 +950,17 @@ function IconPicker({
           </DialogDescription>
         </DialogHeader>
         <div className="px-5 pt-1">
-          <label className="flex h-12 items-center gap-2 rounded-xl border bg-background px-3 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20">
+          <label
+            htmlFor="icon-search"
+            className="flex h-12 items-center gap-2 rounded-xl border bg-background px-3 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20"
+          >
             <Search className="size-4 text-muted-foreground" />
             <Input
+              id="icon-search"
               className="h-full border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search icons: coffee, camera, arrow…"
-              autoFocus
             />
           </label>
         </div>
@@ -982,9 +969,9 @@ function IconPicker({
             <div className="grid min-h-56 place-items-center text-sm text-muted-foreground">
               Searching Iconify…
             </div>
-          ) : results.length ? (
+          ) : visibleResults.length ? (
             <div className="grid grid-cols-6 gap-2 pt-3 sm:grid-cols-8">
-              {results.map((icon) => (
+              {visibleResults.map((icon) => (
                 <button
                   key={icon}
                   type="button"
@@ -1038,11 +1025,12 @@ function ContentFields({
     );
   if (type === 'text')
     return (
-      <label className="block">
+      <label htmlFor="plain-text" className="block">
         <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">
           Plain text
         </span>
         <Textarea
+          id="plain-text"
           className="min-h-24 rounded-xl bg-white"
           value={fields.text}
           placeholder="Type anything you want to share"
