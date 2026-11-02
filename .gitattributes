@@ -1,0 +1,6 @@
+# Match .editorconfig and keep formatting checks stable on Windows checkouts.
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.jpg binary

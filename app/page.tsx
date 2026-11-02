@@ -21,18 +21,38 @@ import {
   Mail,
   MessageSquare,
   Phone,
-  QrCode,
   Search,
-  ShieldCheck,
   Sparkles,
   Wifi,
   X,
 } from 'lucide-react';
 import { Icon } from '@iconify/react';
+import NextImage from 'next/image';
+import {
+  contrastRatio,
+  ensureContrast,
+  MIN_CONTRAST,
+} from '@/lib/color-contrast';
+import {
+  composeQrSvg,
+  QUIET_MODULES,
+  type ShapeType,
+  type DotStyle,
+} from '@/lib/qr-shape';
+import {
+  INITIAL_FIELDS,
+  MAX_QR_BYTES,
+  prepareContent,
+  toQrByteString,
+  type ContentType,
+  type FieldName,
+  type Fields,
+} from '@/lib/qr-content';
+
+import { downloadQr } from '@/lib/qr-download';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -49,29 +69,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 
-type ContentType =
-  | 'url'
-  | 'text'
-  | 'email'
-  | 'phone'
-  | 'sms'
-  | 'wifi'
-  | 'contact'
-  | 'event';
-type ShapeType = 'circle' | 'square' | 'hexagon' | 'triangle';
-type DotStyle =
-  | 'square'
-  | 'dots'
-  | 'rounded'
-  | 'classy'
-  | 'classy-rounded'
-  | 'extra-rounded';
 type EyeStyle = 'square' | 'dot' | 'extra-rounded';
-type Fields = Record<string, string>;
-type QRInstance = {
-  append: (element: HTMLElement) => void;
-  update: (options: Record<string, unknown>) => void;
-};
 
 const CONTENT_TYPES = [
   { value: 'url', label: 'Link', icon: Link },
@@ -143,171 +141,55 @@ const CURATED_ICONS = [
   'mdi:arrow-right',
 ];
 
-function luminance(hex: string) {
-  const rgb = hex
-    .replace('#', '')
-    .match(/.{2}/g)
-    ?.map((value) => parseInt(value, 16) / 255) ?? [0, 0, 0];
-  const linear = rgb.map((value) =>
-    value <= 0.03928 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4),
+function ModuleSample({ style }: { style: DotStyle }) {
+  const cells = [
+    [0, 0],
+    [1, 0],
+    [3, 0],
+    [0, 1],
+    [2, 1],
+    [3, 1],
+    [0, 2],
+    [1, 2],
+    [2, 2],
+    [3, 3],
+    [1, 3],
+  ];
+  return (
+    <svg
+      viewBox="0 0 46 46"
+      className="size-11"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      {cells.map(([x, y]) => {
+        const key = `${x}-${y}`;
+        if (style === 'dots')
+          return <circle key={key} cx={x * 12 + 5} cy={y * 12 + 5} r="4" />;
+        if (style === 'classy' || style === 'classy-rounded') {
+          const radius = style === 'classy' ? 4 : 8;
+          return (
+            <path
+              key={key}
+              transform={`translate(${x * 12},${y * 12})`}
+              d={`M${radius} 0H10V${10 - radius}Q10 10 ${10 - radius} 10H0V${radius}Q0 0 ${radius} 0Z`}
+            />
+          );
+        }
+        const radius = style === 'square' ? 0 : style === 'rounded' ? 2.5 : 5;
+        return (
+          <rect
+            key={key}
+            x={x * 12}
+            y={y * 12}
+            width="10"
+            height="10"
+            rx={radius}
+          />
+        );
+      })}
+    </svg>
   );
-  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
-}
-
-function contrastRatio(first: string, second: string) {
-  const high = Math.max(luminance(first), luminance(second));
-  const low = Math.min(luminance(first), luminance(second));
-  return (high + 0.05) / (low + 0.05);
-}
-
-function decorationPoints(shape: ShapeType) {
-  if (shape !== 'hexagon' && shape !== 'triangle') return [];
-  const points: { x: number; y: number; r: number }[] = [];
-  for (let y = 32; y <= 728; y += 28) {
-    for (let x = 32; x <= 728; x += 28) {
-      const jitter = ((x * 17 + y * 31) % 9) - 4;
-      const px = x + jitter;
-      const insideHex =
-        px >= 18 + Math.abs(y - 380) * 0.49 &&
-        px <= 742 - Math.abs(y - 380) * 0.49;
-      const halfWidth = Math.max(0, (y - 18) * 0.505);
-      const insideTriangle =
-        y >= 18 && px >= 380 - halfWidth && px <= 380 + halfWidth;
-      const outsideCore =
-        shape === 'hexagon'
-          ? !(px > 70 && px < 690 && y > 70 && y < 690)
-          : !(px > 140 && px < 620 && y > 212 && y < 748);
-      if (
-        (shape === 'hexagon' ? insideHex : insideTriangle) &&
-        outsideCore &&
-        (x + y) % 84 !== 0
-      ) {
-        points.push({ x: px, y, r: 7 + ((x + y) % 3) });
-      }
-    }
-  }
-  return points;
-}
-
-function decorativeSvg(shape: ShapeType, color: string) {
-  return decorationPoints(shape)
-    .map(
-      ({ x, y, r }) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${color}"/>`,
-    )
-    .join('');
-}
-
-const INITIAL_FIELDS: Fields = {
-  url: '',
-  text: '',
-  email: '',
-  subject: '',
-  body: '',
-  phone: '',
-  smsPhone: '',
-  smsBody: '',
-  ssid: '',
-  password: '',
-  encryption: 'WPA',
-  hidden: 'false',
-  firstName: '',
-  lastName: '',
-  company: '',
-  jobTitle: '',
-  contactPhone: '',
-  contactEmail: '',
-  website: '',
-  address: '',
-  eventTitle: '',
-  eventLocation: '',
-  eventStart: '',
-  eventEnd: '',
-  eventDescription: '',
-};
-
-function escapeWifi(value: string) {
-  return value.replace(/[\\;,:"]/g, (character) => `\\${character}`);
-}
-
-function escapeVCard(value: string) {
-  return value
-    .replace(/\\/g, '\\\\')
-    .replace(/\n/g, '\\n')
-    .replace(/;/g, '\\;')
-    .replace(/,/g, '\\,');
-}
-
-function formatEventDate(value: string) {
-  return value.replace(/[-:]/g, '').replace('T', 'T').slice(0, 13) + '00';
-}
-
-function buildPayload(type: ContentType, fields: Fields) {
-  switch (type) {
-    case 'url': {
-      const value = fields.url.trim();
-      if (!value) return '';
-      return /^[a-z][a-z\d+.-]*:/i.test(value) ? value : `https://${value}`;
-    }
-    case 'text':
-      return fields.text.trim();
-    case 'email': {
-      if (!fields.email.trim()) return '';
-      const params = new URLSearchParams();
-      if (fields.subject) params.set('subject', fields.subject);
-      if (fields.body) params.set('body', fields.body);
-      return `mailto:${fields.email.trim()}${params.size ? `?${params.toString()}` : ''}`;
-    }
-    case 'phone':
-      return fields.phone.trim()
-        ? `tel:${fields.phone.trim().replace(/\s/g, '')}`
-        : '';
-    case 'sms':
-      return fields.smsPhone.trim()
-        ? `SMSTO:${fields.smsPhone.trim().replace(/\s/g, '')}:${fields.smsBody}`
-        : '';
-    case 'wifi':
-      return fields.ssid.trim()
-        ? `WIFI:T:${fields.encryption};S:${escapeWifi(fields.ssid)};P:${escapeWifi(fields.password)};H:${fields.hidden};;`
-        : '';
-    case 'contact': {
-      if (!fields.firstName.trim() && !fields.lastName.trim()) return '';
-      const fullName = `${fields.firstName} ${fields.lastName}`.trim();
-      return [
-        'BEGIN:VCARD',
-        'VERSION:3.0',
-        `N:${escapeVCard(fields.lastName)};${escapeVCard(fields.firstName)};;;`,
-        `FN:${escapeVCard(fullName)}`,
-        fields.company && `ORG:${escapeVCard(fields.company)}`,
-        fields.jobTitle && `TITLE:${escapeVCard(fields.jobTitle)}`,
-        fields.contactPhone && `TEL;TYPE=CELL:${fields.contactPhone}`,
-        fields.contactEmail && `EMAIL:${fields.contactEmail}`,
-        fields.website && `URL:${fields.website}`,
-        fields.address && `ADR;TYPE=WORK:;;${escapeVCard(fields.address)};;;;`,
-        'END:VCARD',
-      ]
-        .filter(Boolean)
-        .join('\r\n');
-    }
-    case 'event':
-      return fields.eventTitle.trim() && fields.eventStart
-        ? [
-            'BEGIN:VCALENDAR',
-            'VERSION:2.0',
-            'BEGIN:VEVENT',
-            `SUMMARY:${escapeVCard(fields.eventTitle)}`,
-            `DTSTART:${formatEventDate(fields.eventStart)}`,
-            fields.eventEnd && `DTEND:${formatEventDate(fields.eventEnd)}`,
-            fields.eventLocation &&
-              `LOCATION:${escapeVCard(fields.eventLocation)}`,
-            fields.eventDescription &&
-              `DESCRIPTION:${escapeVCard(fields.eventDescription)}`,
-            'END:VEVENT',
-            'END:VCALENDAR',
-          ]
-            .filter(Boolean)
-            .join('\r\n')
-        : '';
-  }
 }
 
 function qrOptions(
@@ -315,19 +197,19 @@ function qrOptions(
   color: string,
   dotStyle: DotStyle,
   eyeStyle: EyeStyle,
-  shape: ShapeType,
+  count: number,
   iconData: string,
 ) {
   return {
     width: 640,
     height: 640,
     type: 'svg' as const,
-    shape: shape === 'circle' ? ('circle' as const) : ('square' as const),
+    shape: 'square' as const,
     data: payload || ' ',
     image: iconData || undefined,
-    margin: 46,
-    qrOptions: { errorCorrectionLevel: 'H' as const },
-    dotsOptions: { color, type: dotStyle },
+    margin: (640 * QUIET_MODULES) / (count + QUIET_MODULES * 2),
+    qrOptions: { errorCorrectionLevel: 'H' as const, mode: 'Byte' as const },
+    dotsOptions: { color, type: dotStyle, roundSize: false },
     cornersSquareOptions: { color, type: eyeStyle },
     cornersDotOptions: {
       color,
@@ -349,28 +231,44 @@ function Field({
   setFields,
   type = 'text',
   placeholder,
+  multiline = false,
+  disabled = false,
+  min,
 }: {
   label: string;
-  name: string;
+  name: FieldName;
   fields: Fields;
   setFields: Dispatch<SetStateAction<Fields>>;
   type?: string;
   placeholder?: string;
+  multiline?: boolean;
+  disabled?: boolean;
+  min?: string;
 }) {
+  const shared = {
+    name,
+    value: fields[name],
+    placeholder,
+    disabled,
+    onChange: (
+      event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+    ) => setFields((current) => ({ ...current, [name]: event.target.value })),
+  };
   return (
     <label className="block">
       <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">
         {label}
       </span>
-      <Input
-        className="h-10 rounded-xl bg-background"
-        type={type}
-        value={fields[name]}
-        placeholder={placeholder}
-        onChange={(event) =>
-          setFields((current) => ({ ...current, [name]: event.target.value }))
-        }
-      />
+      {multiline ? (
+        <Textarea className="min-h-24 rounded-sm bg-background" {...shared} />
+      ) : (
+        <Input
+          className="h-10 rounded-sm bg-background"
+          type={type}
+          min={min}
+          {...shared}
+        />
+      )}
     </label>
   );
 }
@@ -381,20 +279,75 @@ export default function Home() {
   const [shape, setShape] = useState<ShapeType>('circle');
   const [color, setColor] = useState('#11130f');
   const [backgroundColor, setBackgroundColor] = useState('#ffffff');
+  const [transparentBackground, setTransparentBackground] = useState(false);
   const [dotStyle, setDotStyle] = useState<DotStyle>('dots');
   const [eyeStyle, setEyeStyle] = useState<EyeStyle>('extra-rounded');
   const [selectedIcon, setSelectedIcon] = useState('');
-  const [iconData, setIconData] = useState('');
-  const [copied, setCopied] = useState(false);
-  const [ready, setReady] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const qrRef = useRef<QRInstance | null>(null);
-  const payload = useMemo(
-    () => buildPayload(contentType, fields),
+  const [iconData, setIconData] = useState({ key: '', data: '', error: '' });
+  const [iconAttempt, setIconAttempt] = useState(0);
+  const [copyState, setCopyState] = useState({ payload: '', status: '' });
+  const copyAttempt = useRef(0);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  const [downloading, setDownloading] = useState(false);
+  const downloadLock = useRef(false);
+  const [downloadFailure, setDownloadFailure] = useState({
+    key: '',
+    message: '',
+  });
+  const [rendered, setRendered] = useState({ key: '', svg: '' });
+  const [renderFailure, setRenderFailure] = useState({ key: '', message: '' });
+  const content = useMemo(
+    () => prepareContent(contentType, fields),
     [contentType, fields],
   );
+  const { payload } = content;
+  const renderPayload = content.error ? '' : payload;
   const contrast = contrastRatio(color, backgroundColor);
-  const activeIconData = selectedIcon ? iconData : '';
+  const qrBackground = transparentBackground ? null : backgroundColor;
+  const iconKey = selectedIcon ? `${selectedIcon}:${color}:${iconAttempt}` : '';
+  const iconPending = !!selectedIcon && iconData.key !== iconKey;
+  const iconError =
+    selectedIcon && iconData.key === iconKey ? iconData.error : '';
+  const activeIconData =
+    selectedIcon && iconData.key === iconKey ? iconData.data : '';
+  const renderKey = JSON.stringify([
+    renderPayload,
+    color,
+    qrBackground,
+    dotStyle,
+    eyeStyle,
+    shape,
+    activeIconData,
+  ]);
+  const ready =
+    !!renderPayload &&
+    !iconPending &&
+    !iconError &&
+    rendered.key === renderKey &&
+    !!rendered.svg;
+  const renderError =
+    !ready && renderFailure.key === renderKey ? renderFailure.message : '';
+  const previewSvg = ready
+    ? rendered.svg
+    : composeQrSvg(shape, qrBackground, color, dotStyle, 21);
+  const previewSrc = useMemo(
+    () => `data:image/svg+xml,${encodeURIComponent(previewSvg)}`,
+    [previewSvg],
+  );
+  const previewMessage =
+    content.error ||
+    iconError ||
+    renderError ||
+    (!payload
+      ? 'Enter the details on the left to create your QR code.'
+      : iconPending
+        ? 'Loading center icon…'
+        : !ready
+          ? 'Creating QR code…'
+          : '');
+  const copyStatus = copyState.payload === payload ? copyState.status : '';
 
   useEffect(() => {
     if (!selectedIcon) return;
@@ -403,152 +356,202 @@ export default function Home() {
     const controller = new AbortController();
     fetch(
       `https://api.iconify.design/${prefix}/${name}.svg?color=${encodeURIComponent(color)}`,
-      { signal: controller.signal },
+      {
+        signal: AbortSignal.any([
+          controller.signal,
+          AbortSignal.timeout(12000),
+        ]),
+      },
     )
       .then((response) =>
         response.ok
           ? response.text()
           : Promise.reject(new Error('Icon unavailable')),
       )
-      .then((svg) =>
-        setIconData(`data:image/svg+xml,${encodeURIComponent(svg)}`),
-      )
-      .catch(() => setIconData(''));
+      .then((svg) => {
+        if (!controller.signal.aborted)
+          setIconData({
+            key: iconKey,
+            data: `data:image/svg+xml,${encodeURIComponent(svg)}`,
+            error: '',
+          });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted)
+          setIconData({
+            key: iconKey,
+            data: '',
+            error: 'Center icon could not be loaded. Retry or remove it.',
+          });
+      });
     return () => controller.abort();
-  }, [selectedIcon, color]);
+  }, [selectedIcon, color, iconKey]);
+
+  useEffect(
+    () => () => {
+      copyAttempt.current++;
+      clearTimeout(copyTimer.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
-    void import('qr-code-styling').then(({ default: QRCodeStyling }) => {
-      if (cancelled || !containerRef.current) return;
+    let renderTimeout: number | undefined;
+    if (!renderPayload || iconPending || iconError) return;
+    async function render() {
+      const [{ default: QRCodeStyling }, { default: qrcode }] =
+        await Promise.all([
+          import('qr-code-styling'),
+          import('qrcode-generator'),
+        ]);
+      if (cancelled) return;
+      const byteString = toQrByteString(renderPayload);
+      const matrix = qrcode(0, 'H');
+      matrix.addData(byteString, 'Byte');
+      matrix.make();
+      const count = matrix.getModuleCount();
       const qr = new QRCodeStyling(
-        qrOptions('', '#11130f', 'dots', 'extra-rounded', 'circle', ''),
+        qrOptions(byteString, color, dotStyle, eyeStyle, count, activeIconData),
       );
-      qr.append(containerRef.current);
-      qrRef.current = qr as unknown as QRInstance;
-      setReady(true);
-    });
+      const data = await Promise.race([
+        qr.getRawData('svg'),
+        new Promise<never>((_, reject) => {
+          renderTimeout = window.setTimeout(
+            () => reject(new Error('QR rendering timed out')),
+            12000,
+          );
+        }),
+      ]);
+      window.clearTimeout(renderTimeout);
+      if (!(data instanceof Blob)) throw new Error('QR rendering failed');
+      // getRawData includes an XML declaration, which cannot be nested in SVG.
+      const core = (await data.text())
+        .replace(/<\?xml[^?]*\?>\s*/, '')
+        .replace(/url\('#([^']+)'\)/g, 'url(#$1)')
+        .replace(
+          'shape-rendering="crispEdges"',
+          'shape-rendering="geometricPrecision"',
+        );
+      if (!cancelled)
+        setRendered({
+          key: renderKey,
+          svg: composeQrSvg(
+            shape,
+            qrBackground,
+            color,
+            dotStyle,
+            count,
+            core,
+            matrix,
+          ),
+        });
+    }
+    const timer = window.setTimeout(() => {
+      void render().catch(() => {
+        window.clearTimeout(renderTimeout);
+        if (!cancelled)
+          setRenderFailure({
+            key: renderKey,
+            message:
+              'Unable to create this QR code. Try editing the content or removing the icon.',
+          });
+      });
+    }, 250);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
+      window.clearTimeout(renderTimeout);
     };
-  }, []);
-
-  useEffect(() => {
-    qrRef.current?.update(
-      qrOptions(payload, color, dotStyle, eyeStyle, shape, activeIconData),
-    );
-  }, [payload, color, dotStyle, eyeStyle, shape, activeIconData]);
-
-  function compositeSvg() {
-    const inner = containerRef.current?.querySelector('svg')?.outerHTML;
-    if (!inner) return '';
-    const placements: Record<
-      ShapeType,
-      { x: number; y: number; size: number }
-    > = {
-      circle: { x: 70, y: 70, size: 620 },
-      square: { x: 70, y: 70, size: 620 },
-      hexagon: { x: 100, y: 100, size: 560 },
-      triangle: { x: 170, y: 245, size: 420 },
-    };
-    const backgrounds: Record<ShapeType, string> = {
-      circle: `<circle cx="380" cy="380" r="360" fill="${backgroundColor}"/>`,
-      square: `<rect x="25" y="25" width="710" height="710" rx="58" fill="${backgroundColor}"/>`,
-      hexagon: `<polygon points="190,25 570,25 745,380 570,735 190,735 15,380" fill="${backgroundColor}"/>`,
-      triangle: `<polygon points="380,18 744,735 16,735" fill="${backgroundColor}"/>`,
-    };
-    const current = placements[shape];
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="760" height="760" viewBox="0 0 760 760">${backgrounds[shape]}${decorativeSvg(shape, color)}<svg x="${current.x}" y="${current.y}" width="${current.size}" height="${current.size}" viewBox="0 0 640 640">${inner}</svg></svg>`;
-  }
+  }, [
+    renderPayload,
+    iconPending,
+    iconError,
+    color,
+    qrBackground,
+    dotStyle,
+    eyeStyle,
+    shape,
+    activeIconData,
+    renderKey,
+  ]);
 
   async function download(extension: 'png' | 'svg') {
-    const source = compositeSvg();
-    if (!source || !payload) return;
-    const name = `${shape}-${contentType}-qr`;
-    if (extension === 'svg') {
-      const url = URL.createObjectURL(
-        new Blob([source], { type: 'image/svg+xml' }),
+    if (!ready || !payload || downloadLock.current) return;
+    downloadLock.current = true;
+    setDownloading(true);
+    setDownloadFailure({ key: '', message: '' });
+    try {
+      await downloadQr(
+        rendered.svg,
+        `${shape}-${contentType}-qr${transparentBackground ? '-transparent' : ''}`,
+        extension,
       );
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `${name}.svg`;
-      anchor.click();
-      URL.revokeObjectURL(url);
-      return;
+    } catch {
+      setDownloadFailure({
+        key: renderKey,
+        message: 'Download failed. Please try again or choose another format.',
+      });
+    } finally {
+      downloadLock.current = false;
+      setDownloading(false);
     }
-    const image = new Image();
-    const sourceUrl = URL.createObjectURL(
-      new Blob([source], { type: 'image/svg+xml' }),
-    );
-    image.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = 1520;
-      canvas.height = 1520;
-      const context = canvas.getContext('2d');
-      if (!context) return;
-      context.drawImage(image, 0, 0, 1520, 1520);
-      canvas.toBlob((blob) => {
-        if (!blob) return;
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = `${name}.png`;
-        anchor.click();
-        URL.revokeObjectURL(url);
-      }, 'image/png');
-      URL.revokeObjectURL(sourceUrl);
-    };
-    image.src = sourceUrl;
   }
 
   async function copyPayload() {
-    if (!payload) return;
-    await navigator.clipboard.writeText(payload);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
+    if (!payload || content.error) return;
+    const attempt = ++copyAttempt.current;
+    clearTimeout(copyTimer.current);
+    try {
+      await navigator.clipboard.writeText(payload);
+      if (attempt !== copyAttempt.current) return;
+      setCopyState({ payload, status: 'success' });
+      copyTimer.current = setTimeout(
+        () => setCopyState({ payload: '', status: '' }),
+        1600,
+      );
+    } catch {
+      if (attempt === copyAttempt.current)
+        setCopyState({ payload, status: 'error' });
+    }
   }
 
   function applyForeground(next: string) {
     setColor(next);
-    if (contrastRatio(next, backgroundColor) < 4.5) {
-      setBackgroundColor(luminance(next) > 0.5 ? '#11130f' : '#ffffff');
-    }
+    setBackgroundColor(ensureContrast(backgroundColor, next));
   }
 
   function applyBackground(next: string) {
     setBackgroundColor(next);
-    if (contrastRatio(color, next) < 4.5) {
-      setColor(luminance(next) > 0.5 ? '#11130f' : '#ffffff');
-    }
+    setColor(ensureContrast(color, next));
   }
 
   function makeHighContrast() {
-    setColor(luminance(backgroundColor) > 0.5 ? '#11130f' : '#ffffff');
+    setColor(ensureContrast(color, backgroundColor));
   }
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <header className="mx-auto flex w-full max-w-[1440px] items-center justify-between px-5 py-5 sm:px-8 lg:px-10">
+      <header className="studio-header">
         <div className="flex items-center gap-3">
-          <span className="grid size-10 place-items-center rounded-full bg-primary text-primary-foreground">
-            <QrCode className="size-5" />
-          </span>
+          <NextImage
+            src="/logo.png"
+            alt=""
+            width={40}
+            height={40}
+            className="size-10 rounded-sm"
+            unoptimized
+          />
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Open source tool
-            </p>
             <p className="font-semibold tracking-tight">Round QR Studio</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="hidden items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground sm:flex">
-            <ShieldCheck className="size-4 text-accent" /> High error correction
-          </span>
           <a
             href="https://github.com/hlibsuslov/round-qr-studio"
             target="_blank"
             rel="noreferrer"
-            className="inline-flex size-10 items-center justify-center rounded-full border bg-card text-foreground transition hover:-translate-y-0.5 hover:border-primary hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            className="inline-flex size-10 items-center justify-center rounded-sm border bg-card text-foreground hover:border-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             aria-label="View Round QR Studio source on GitHub"
             title="View source on GitHub"
           >
@@ -557,118 +560,158 @@ export default function Home() {
         </div>
       </header>
 
-      <section className="mx-auto grid w-full max-w-[1440px] gap-6 px-5 pb-10 sm:px-8 lg:grid-cols-[minmax(470px,0.95fr)_minmax(500px,1.05fr)] lg:px-10 lg:pb-14">
-        <div className="rounded-[30px] border bg-card p-5 shadow-[0_20px_70px_rgba(13,24,18,0.06)] sm:p-7">
-          <h1 className="text-4xl font-semibold leading-[1.02] tracking-[-0.045em] sm:text-5xl">
-            Shape your scan.
+      <section className="studio-layout">
+        <div className="studio-editor">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            QR code generator
           </h1>
-          <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-            Create recognizable QR actions for links, contacts, Wi-Fi and more —
-            then wrap the reliable QR core in a distinctive silhouette.
+          <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+            Add your content, customize the design, and export your QR code.
           </p>
 
-          <div className="mt-7 space-y-6">
+          <div className="editor-settings">
             <fieldset>
-              <legend className="mb-3 text-sm font-semibold">
-                1. Choose what it does
-              </legend>
-              <div className="choice-strip grid grid-cols-4 gap-2">
+              <legend className="section-label">Content</legend>
+              <div className="grid grid-cols-4 gap-2">
                 {CONTENT_TYPES.map(({ value, label, icon: Icon }) => (
                   <button
                     key={value}
                     type="button"
                     onClick={() => setContentType(value)}
                     aria-pressed={contentType === value}
-                    className="choice-card flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-xl border bg-background px-2 text-xs font-medium transition hover:-translate-y-0.5 hover:border-primary hover:shadow-sm aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+                    className="content-choice visual-choice"
                   >
-                    <Icon className="size-4" />
-                    {label}
+                    <Icon
+                      className="size-7"
+                      strokeWidth={1.6}
+                      aria-hidden="true"
+                    />
+                    <span className="text-[11px] opacity-75">{label}</span>
                   </button>
                 ))}
               </div>
             </fieldset>
 
-            <div className="rounded-2xl border bg-[#f7f7f2] p-4">
+            <section
+              aria-label="QR content"
+              aria-describedby="content-feedback"
+            >
               <ContentFields
                 type={contentType}
                 fields={fields}
                 setFields={setFields}
               />
-            </div>
+              <output
+                id="content-feedback"
+                className={`mt-2 block text-xs leading-5 break-words ${content.error ? 'text-destructive' : 'text-muted-foreground'}`}
+              >
+                {content.error ||
+                  (payload
+                    ? `${content.bytes.toLocaleString('en-US')} / ${MAX_QR_BYTES.toLocaleString('en-US')} bytes`
+                    : `Maximum ${MAX_QR_BYTES.toLocaleString('en-US')} encoded bytes. Text in any language is supported.`)}
+              </output>
+            </section>
 
             <fieldset>
-              <legend className="mb-3 text-sm font-semibold">
-                2. Pick a silhouette
-              </legend>
-              <div className="choice-strip grid grid-cols-4 gap-2">
+              <legend className="section-label">Shape</legend>
+              <div className="grid grid-cols-4 gap-2">
                 {SHAPES.map(({ value, label }) => (
                   <button
                     key={value}
                     type="button"
                     onClick={() => setShape(value)}
                     aria-pressed={shape === value}
-                    className="choice-card rounded-xl border bg-background px-2 py-3 text-xs font-medium transition hover:-translate-y-0.5 hover:border-primary hover:shadow-sm aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+                    className="shape-choice group flex flex-col items-center gap-2 py-2 text-xs font-medium"
                   >
-                    <span className={`shape-swatch shape-swatch-${value}`} />
-                    {label}
+                    <span
+                      className={`shape-swatch shape-swatch-${value}`}
+                      aria-hidden="true"
+                    >
+                      {shape === value && (
+                        <Check className="size-5" strokeWidth={2.5} />
+                      )}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground group-aria-pressed:text-foreground">
+                      {label}
+                    </span>
                   </button>
                 ))}
               </div>
             </fieldset>
 
             <fieldset>
-              <legend className="mb-3 text-sm font-semibold">
-                3. Style the modules
-              </legend>
-              <div className="choice-strip grid grid-cols-3 gap-2">
+              <legend className="section-label">Modules</legend>
+              <div className="grid grid-cols-6 gap-2">
                 {DOT_STYLES.map(({ value, label }) => (
                   <button
                     key={value}
                     type="button"
                     onClick={() => setDotStyle(value)}
                     aria-pressed={dotStyle === value}
-                    className="choice-card min-h-11 rounded-xl border bg-background px-2 py-2.5 text-xs font-medium transition hover:-translate-y-0.5 hover:border-primary hover:shadow-sm aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+                    aria-label={label}
+                    title={label}
+                    className="module-choice visual-choice"
                   >
-                    {label}
+                    <ModuleSample style={value} />
                   </button>
                 ))}
               </div>
             </fieldset>
 
             <div>
-              <p className="mb-3 text-sm font-semibold">
-                4. Refine the details
-              </p>
+              <p className="section-label">Details</p>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">
+                <fieldset>
+                  <legend className="mb-2 text-xs text-muted-foreground">
                     Finder style
-                  </span>
-                  <Select
-                    value={eyeStyle}
-                    onValueChange={(value) => setEyeStyle(value as EyeStyle)}
-                  >
-                    <SelectTrigger className="h-11 w-full rounded-xl bg-background px-3 text-sm shadow-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent
-                      align="start"
-                      className="rounded-xl p-1 shadow-xl"
-                    >
-                      <SelectItem value="extra-rounded" className="py-2.5">
-                        Rounded corners
-                      </SelectItem>
-                      <SelectItem value="dot" className="py-2.5">
-                        Circular eyes
-                      </SelectItem>
-                      <SelectItem value="square" className="py-2.5">
-                        Classic square
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                  </legend>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(
+                      [
+                        { value: 'square', label: 'Square', radius: 0 },
+                        { value: 'extra-rounded', label: 'Rounded', radius: 7 },
+                        { value: 'dot', label: 'Circle', radius: 12 },
+                      ] as const
+                    ).map(({ value, label, radius }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        className="finder-choice visual-choice"
+                        aria-pressed={eyeStyle === value}
+                        aria-label={label + ' finder'}
+                        onClick={() => setEyeStyle(value)}
+                      >
+                        <svg
+                          viewBox="0 0 32 32"
+                          className="size-7"
+                          aria-hidden="true"
+                        >
+                          <rect
+                            x="4"
+                            y="4"
+                            width="24"
+                            height="24"
+                            rx={radius}
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                          />
+                          <rect
+                            x="11"
+                            y="11"
+                            width="10"
+                            height="10"
+                            rx={value === 'square' ? 0 : 5}
+                            fill="currentColor"
+                          />
+                        </svg>
+                        <span>{label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
                 <div>
-                  <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">
+                  <span className="mb-2 block text-xs text-muted-foreground">
                     Center icon
                   </span>
                   <div className="flex gap-2">
@@ -680,7 +723,7 @@ export default function Home() {
                       <Button
                         variant="outline"
                         size="icon-lg"
-                        className="h-11 rounded-xl"
+                        className="h-[72px] rounded-sm"
                         aria-label="Remove center icon"
                         onClick={() => setSelectedIcon('')}
                       >
@@ -688,19 +731,31 @@ export default function Home() {
                       </Button>
                     )}
                   </div>
+                  {iconError && (
+                    <output className="mt-2 block text-xs text-destructive">
+                      {iconError}{' '}
+                      <button
+                        type="button"
+                        className="underline"
+                        onClick={() => setIconAttempt((current) => current + 1)}
+                      >
+                        Retry
+                      </button>
+                    </output>
+                  )}
                 </div>
               </div>
             </div>
 
             <div>
               <div className="mb-3 flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold">
-                  5. Choose a contrast-safe palette
-                </p>
+                <p className="section-label mb-0">Colors</p>
                 <span
-                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${contrast >= 4.5 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}
+                  className={`contrast-label ${contrast >= MIN_CONTRAST ? 'text-muted-foreground' : 'text-amber-800'}`}
                 >
-                  {contrast.toFixed(1)}:1 contrast
+                  {transparentBackground
+                    ? 'Contrast depends on placement'
+                    : `${contrast.toFixed(1)}:1 contrast`}
                 </span>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -717,11 +772,11 @@ export default function Home() {
                   onChange={applyBackground}
                 />
               </div>
-              <div className="mt-3 flex gap-2">
+              <div className="mt-3 flex flex-wrap justify-center gap-2">
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-9 rounded-xl"
+                  className="h-9 rounded-sm"
                   onClick={() => {
                     const previous = color;
                     setColor(backgroundColor);
@@ -733,7 +788,7 @@ export default function Home() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-9 rounded-xl"
+                  className="h-9 rounded-sm"
                   onClick={makeHighContrast}
                 >
                   <Sparkles /> Auto contrast
@@ -741,89 +796,98 @@ export default function Home() {
               </div>
             </div>
           </div>
-
-          <p className="mt-6 flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="size-1.5 rounded-full bg-accent" />
-            Everything is generated locally in your browser.
-          </p>
         </div>
 
-        <div className="relative flex min-h-[620px] flex-col overflow-hidden rounded-[30px] bg-[#dff86a] p-5 sm:min-h-[720px] sm:p-8 lg:sticky lg:top-4 lg:h-[calc(100vh-32px)] lg:min-h-0 lg:max-h-[940px]">
-          <div className="pointer-events-none absolute -right-20 -top-20 size-64 rounded-full border-[44px] border-black/[0.045]" />
-          <div className="relative z-10 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.16em] text-black/55">
-            <span>{shape} preview</span>
-            <span>
-              {ready ? (payload ? 'Ready' : 'Waiting for data') : 'Loading'}
-            </span>
-          </div>
-          <div className="qr-preview-stage relative z-10 flex min-h-0 flex-1 items-center justify-center py-8">
+        <div
+          className="studio-preview"
+          aria-busy={
+            !!payload && !content.error && !iconError && !renderError && !ready
+          }
+        >
+          <div className="qr-preview-stage">
             <div
-              className={`qr-shape qr-shape-${shape}`}
-              style={{ backgroundColor }}
+              className={`qr-shape${transparentBackground ? ' qr-transparent' : ''}`}
             >
-              {decorationPoints(shape).length > 0 && (
-                <svg
-                  className="pointer-events-none absolute inset-0 z-[5] h-full w-full"
-                  viewBox="0 0 760 760"
-                  aria-hidden="true"
-                >
-                  {decorationPoints(shape).map(({ x, y, r }) => (
-                    <circle
-                      key={`${x}-${y}`}
-                      cx={x}
-                      cy={y}
-                      r={r}
-                      fill={color}
-                    />
-                  ))}
-                </svg>
-              )}
-              <div
-                ref={containerRef}
-                className={`qr-canvas qr-canvas-${shape} ${payload ? '' : 'opacity-0'} [&>svg]:h-full [&>svg]:w-full`}
-                aria-label={
+              <NextImage
+                className="h-full w-full"
+                width={760}
+                height={760}
+                unoptimized
+                src={previewSrc}
+                alt={
                   payload
                     ? `${contentType} QR code`
                     : 'QR preview waiting for data'
                 }
               />
-              {!payload && (
+              {previewMessage && (
                 <div
                   className="absolute inset-0 z-20 grid place-items-center px-16 text-center text-sm font-semibold"
                   style={{ color }}
                 >
-                  Enter the details on the left to create your QR code.
+                  {previewMessage}
                 </div>
               )}
             </div>
           </div>
-          <div className="relative z-10 mb-3 flex shrink-0 items-center gap-2 rounded-2xl bg-black/[0.06] p-2 text-xs text-black/60">
+          <div className="encoded-data">
             <code className="min-w-0 flex-1 truncate px-2">
-              {payload || 'No encoded data yet'}
+              {payload
+                ? `${payload.slice(0, 180)}${payload.length > 180 ? '…' : ''}`
+                : 'No encoded data yet'}
             </code>
             <Button
               variant="ghost"
               size="icon-sm"
               aria-label="Copy encoded data"
               onClick={copyPayload}
-              disabled={!payload}
+              disabled={!payload || !!content.error}
             >
-              {copied ? <Check /> : <Copy />}
+              {copyStatus === 'success' ? <Check /> : <Copy />}
             </Button>
           </div>
+          <output
+            className={`mb-2 block min-h-4 text-xs ${copyStatus === 'success' ? 'text-muted-foreground' : 'text-destructive'}`}
+          >
+            {copyStatus === 'error'
+              ? 'Could not copy. Check clipboard access and try again.'
+              : downloadFailure.key === renderKey
+                ? downloadFailure.message
+                : copyStatus === 'success'
+                  ? 'Copied to clipboard.'
+                  : ''}
+          </output>
+          <label className="relative z-10 mb-3 flex shrink-0 cursor-pointer items-center gap-2 text-sm font-medium">
+            <input
+              type="checkbox"
+              className="size-4 accent-black"
+              checked={transparentBackground}
+              onChange={(event) =>
+                setTransparentBackground(event.target.checked)
+              }
+              aria-describedby="transparent-background-hint"
+            />
+            Transparent background
+          </label>
+          <p
+            id="transparent-background-hint"
+            className="mb-3 shrink-0 text-xs text-muted-foreground"
+          >
+            Keep only the QR code and decorative dots in PNG and SVG.
+          </p>
           <div className="relative z-10 grid shrink-0 grid-cols-2 gap-3">
             <Button
-              className="h-12 rounded-2xl bg-black text-white hover:bg-black/80"
+              className="h-12 rounded-sm bg-black text-white hover:bg-black/80"
               onClick={() => download('png')}
-              disabled={!ready || !payload}
+              disabled={!ready || downloading}
             >
               <Download data-icon="inline-start" /> PNG
             </Button>
             <Button
               variant="outline"
-              className="h-12 rounded-2xl border-black/15 bg-white/55 text-black hover:bg-white"
+              className="h-12 rounded-sm border-black/15 bg-white/55 text-black hover:bg-white"
               onClick={() => download('svg')}
-              disabled={!ready || !payload}
+              disabled={!ready || downloading}
             >
               <Download data-icon="inline-start" /> SVG
             </Button>
@@ -846,19 +910,19 @@ function ColorPicker({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="rounded-2xl border bg-background p-3">
+    <div className="color-picker">
       <div className="mb-3 flex items-center justify-between">
         <span className="text-xs font-semibold">{label}</span>
-        <label className="flex cursor-pointer items-center gap-2 rounded-lg border bg-white px-2 py-1.5">
+        <label className="relative flex min-h-9 cursor-pointer items-center gap-2 border-b border-input px-1">
           <span className="font-mono text-[10px] uppercase text-muted-foreground">
             {value}
           </span>
           <span
-            className="size-5 rounded-md border"
+            className="size-5 rounded-sm border"
             style={{ backgroundColor: value }}
           />
           <input
-            className="sr-only"
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
             aria-label={`Custom ${label} color`}
             type="color"
             value={value}
@@ -871,10 +935,10 @@ function ColorPicker({
           <button
             key={preset}
             type="button"
-            aria-label={`Use color ${preset}`}
+            aria-label={`${label}: ${preset}`}
             aria-pressed={value === preset}
             onClick={() => onChange(preset)}
-            className="aspect-square rounded-lg border border-black/10 shadow-sm outline-none transition hover:scale-105 focus-visible:ring-2 focus-visible:ring-ring aria-pressed:ring-2 aria-pressed:ring-black"
+            className="color-swatch"
             style={{ backgroundColor: preset }}
           />
         ))}
@@ -892,32 +956,56 @@ function IconPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<string[]>(CURATED_ICONS);
-  const [loading, setLoading] = useState(false);
-  const visibleResults = query.trim().length < 2 ? CURATED_ICONS : results;
+  const [results, setResults] = useState({
+    query: '',
+    icons: [] as string[],
+    error: false,
+  });
+  const cleanQuery = query.trim();
+  const loading = cleanQuery.length >= 2 && results.query !== cleanQuery;
+  const searchError = results.query === cleanQuery && results.error;
+  const visibleResults =
+    cleanQuery.length < 2
+      ? CURATED_ICONS
+      : results.query === cleanQuery
+        ? results.icons
+        : [];
 
   useEffect(() => {
-    const clean = query.trim();
-    if (clean.length < 2) return;
+    if (!open || cleanQuery.length < 2) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      setLoading(true);
       fetch(
-        `https://api.iconify.design/search?query=${encodeURIComponent(clean)}&limit=96`,
-        { signal: controller.signal },
+        `https://api.iconify.design/search?query=${encodeURIComponent(cleanQuery)}&limit=96`,
+        {
+          signal: AbortSignal.any([
+            controller.signal,
+            AbortSignal.timeout(12000),
+          ]),
+        },
       )
-        .then(
-          async (response) => (await response.json()) as { icons?: string[] },
-        )
-        .then((data) => setResults(data.icons ?? []))
-        .catch(() => setResults([]))
-        .finally(() => setLoading(false));
+        .then(async (response) => {
+          if (!response.ok) throw new Error('Icon search unavailable');
+          return (await response.json()) as { icons?: string[] };
+        })
+        .then((data) => {
+          if (!controller.signal.aborted)
+            setResults({
+              query: cleanQuery,
+              icons: data.icons ?? [],
+              error: false,
+            });
+        })
+        .catch(() => {
+          if (!controller.signal.aborted)
+            setResults({ query: cleanQuery, icons: [], error: true });
+        });
     }, 280);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [query]);
+  }, [cleanQuery, open]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -925,7 +1013,7 @@ function IconPicker({
         render={
           <Button
             variant="outline"
-            className="h-11 flex-1 justify-start rounded-xl bg-background px-3"
+            className="icon-picker-trigger h-[72px] min-w-0 flex-1 justify-center rounded-sm bg-white px-3"
           />
         }
       >
@@ -941,30 +1029,31 @@ function IconPicker({
           </>
         )}
       </DialogTrigger>
-      <DialogContent className="max-h-[min(760px,calc(100vh-2rem))] max-w-2xl overflow-hidden rounded-3xl p-0">
-        <DialogHeader className="border-b p-5 pr-14">
-          <DialogTitle className="text-xl">Choose a center icon</DialogTitle>
-          <DialogDescription>
-            Search more than 300,000 open-source SVG icons from Iconify. The
-            selected SVG is embedded into your download.
+      <DialogContent className="icon-dialog flex max-h-[calc(100dvh-2rem)] flex-col gap-3 overflow-hidden rounded-sm p-0 md:h-[520px] md:max-w-[640px]">
+        <DialogHeader className="shrink-0 border-b px-5 py-4 pr-14">
+          <DialogTitle className="text-base">Choose a center icon</DialogTitle>
+          <DialogDescription className="sr-only">
+            Search Iconify and select an icon for the center of your QR code.
           </DialogDescription>
         </DialogHeader>
-        <div className="px-5 pt-1">
+        <div className="shrink-0 px-5">
           <label
             htmlFor="icon-search"
-            className="flex h-12 items-center gap-2 rounded-xl border bg-background px-3 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20"
+            className="flex h-12 items-center gap-2 rounded-sm border bg-white px-3"
           >
             <Search className="size-4 text-muted-foreground" />
             <Input
               id="icon-search"
+              aria-label="Search icons"
               className="h-full border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
               value={query}
+              maxLength={100}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search icons: coffee, camera, arrow…"
             />
           </label>
         </div>
-        <div className="min-h-56 overflow-y-auto px-5 pb-5">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
           {loading ? (
             <div className="grid min-h-56 place-items-center text-sm text-muted-foreground">
               Searching Iconify…
@@ -976,11 +1065,12 @@ function IconPicker({
                   key={icon}
                   type="button"
                   title={icon}
+                  aria-label={icon}
                   onClick={() => {
                     onSelect(icon);
                     setOpen(false);
                   }}
-                  className="grid aspect-square place-items-center rounded-xl border bg-background text-foreground transition hover:-translate-y-0.5 hover:border-primary hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring"
+                  className="grid aspect-square place-items-center rounded-sm border bg-background text-foreground hover:border-primary focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <Icon icon={icon} className="size-6" />
                 </button>
@@ -988,15 +1078,11 @@ function IconPicker({
             </div>
           ) : (
             <div className="grid min-h-56 place-items-center text-sm text-muted-foreground">
-              No icons found. Try another keyword.
+              {searchError
+                ? 'Icon search is unavailable. Try another keyword or choose a suggested icon by clearing the search.'
+                : 'No icons found. Try another keyword.'}
             </div>
           )}
-        </div>
-        <div className="flex items-center justify-between border-t bg-muted/40 px-5 py-3 text-xs text-muted-foreground">
-          <span>Powered by Iconify open-source icon sets</span>
-          <DialogClose render={<Button variant="ghost" size="sm" />}>
-            Close
-          </DialogClose>
         </div>
       </DialogContent>
     </Dialog>
@@ -1031,7 +1117,7 @@ function ContentFields({
         </span>
         <Textarea
           id="plain-text"
-          className="min-h-24 rounded-xl bg-white"
+          className="min-h-24 rounded-sm bg-white"
           value={fields.text}
           placeholder="Type anything you want to share"
           onChange={(event) =>
@@ -1062,6 +1148,7 @@ function ContentFields({
           <Field
             label="Message"
             name="body"
+            multiline
             fields={fields}
             setFields={setFields}
             placeholder="Optional pre-filled message"
@@ -1094,6 +1181,7 @@ function ContentFields({
         <Field
           label="Message"
           name="smsBody"
+          multiline
           fields={fields}
           setFields={setFields}
           placeholder="Optional message"
@@ -1113,6 +1201,7 @@ function ContentFields({
         <Field
           label="Password"
           name="password"
+          disabled={fields.encryption === 'nopass'}
           fields={fields}
           setFields={setFields}
           placeholder="Network password"
@@ -1124,16 +1213,30 @@ function ContentFields({
           <Select
             value={fields.encryption}
             onValueChange={(value) =>
+              value &&
               setFields((current) => ({
                 ...current,
-                encryption: value as string,
+                encryption: value,
               }))
             }
           >
-            <SelectTrigger className="h-10 w-full rounded-xl bg-white px-3">
-              <SelectValue />
+            <SelectTrigger
+              aria-label="Wi-Fi security"
+              className="h-10 w-full rounded-sm bg-white px-3"
+            >
+              <SelectValue>
+                {fields.encryption === 'WPA'
+                  ? 'WPA / WPA2'
+                  : fields.encryption === 'nopass'
+                    ? 'No password'
+                    : 'WEP'}
+              </SelectValue>
             </SelectTrigger>
-            <SelectContent align="start" className="rounded-xl p-1 shadow-xl">
+            <SelectContent
+              align="start"
+              alignItemWithTrigger={false}
+              className="rounded-sm p-1 shadow-md"
+            >
               <SelectItem value="WPA" className="py-2.5">
                 WPA / WPA2
               </SelectItem>
@@ -1250,6 +1353,7 @@ function ContentFields({
       <Field
         label="Ends"
         name="eventEnd"
+        min={fields.eventStart || undefined}
         fields={fields}
         setFields={setFields}
         type="datetime-local"
@@ -1258,6 +1362,7 @@ function ContentFields({
         <Field
           label="Description"
           name="eventDescription"
+          multiline
           fields={fields}
           setFields={setFields}
           placeholder="Optional event details"

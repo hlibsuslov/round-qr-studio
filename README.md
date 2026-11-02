@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="public/favicon.svg" width="72" height="72" alt="Round QR Studio logo">
+  <img src="public/logo.png" width="72" height="72" alt="Round QR Studio logo">
   <h1>Round QR Studio</h1>
   <p>Create distinctive, scan-safe QR codes directly in your browser.</p>
   <p>
@@ -15,7 +15,7 @@
   </p>
 </div>
 
-![Round QR Studio — shape your scan](public/og.png)
+[![Round QR Studio — Open source QR code generator](public/og.png)](https://round-qr-studio.hlixli.chatgpt.site)
 
 ## Why Round QR Studio?
 
@@ -56,7 +56,7 @@ Open the local URL printed by the development server.
 npm run check
 ```
 
-The check command verifies formatting, lint rules, TypeScript, and the production build. CI runs the same checks and a high-severity dependency audit for every pull request.
+The check command verifies formatting, lint rules, TypeScript, regression tests, and the production build. Run `npm test` for the QR content, decoding, and contrast regressions alone. CI runs the same checks and a high-severity dependency audit for every pull request.
 
 ## Project structure
 

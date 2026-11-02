@@ -27,10 +27,11 @@
     "build": "vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test",
     "lint": "oxlint",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run build"
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",
@@ -44,6 +45,7 @@
     "input-otp": "1.4.2",
     "lucide-react": "1.31.0",
     "qr-code-styling": "^1.9.2",
+    "qrcode-generator": "1.5.2",
     "react": "19.2.8",
     "react-day-picker": "9.8.1",
     "react-dom": "19.2.8",
@@ -64,6 +66,7 @@
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.2",
     "@vitejs/plugin-rsc": "0.5.34",
+    "jsqr": "1.4.0",
     "oxfmt": "0.61.0",
     "oxlint": "1.76.0",
     "oxlint-tsgolint": "7.0.2001",

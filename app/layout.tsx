@@ -16,10 +16,26 @@ export const metadata: Metadata = {
   title: 'Round QR Studio — Shape your scan',
   description:
     'Create shaped QR codes for links, contacts, email, phone, SMS, Wi-Fi and calendar events.',
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: '16x16 32x32 48x48' },
+      { url: '/favicon.png', type: 'image/png', sizes: '192x192' },
+    ],
+    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180' }],
+  },
   openGraph: {
+    type: 'website',
+    siteName: 'Round QR Studio',
     title: 'Round QR Studio',
     description: 'Shape your scan. Links, contacts, Wi-Fi and more.',
-    images: [{ url: '/og.png', width: 1200, height: 630 }],
+    images: [
+      {
+        url: '/og.png',
+        width: 1200,
+        height: 630,
+        alt: 'Round QR Studio — Open source QR code generator',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
