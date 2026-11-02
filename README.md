@@ -3,7 +3,7 @@
   <h1>Round QR Studio</h1>
   <p>Create distinctive, scan-safe QR codes directly in your browser.</p>
   <p>
-    <a href="https://round-qr-studio.hlixli.chatgpt.site"><strong>Open the live app</strong></a>
+    <a href="https://round-qr-studio-hlib.vercel.app"><strong>Open the live app</strong></a>
     ·
     <a href="https://github.com/hlibsuslov/round-qr-studio/issues">Report a bug</a>
     ·
@@ -15,7 +15,7 @@
   </p>
 </div>
 
-[![Round QR Studio — Open source QR code generator](public/og.png)](https://round-qr-studio.hlixli.chatgpt.site)
+[![Round QR Studio — Open source QR code generator](public/og.png)](https://round-qr-studio-hlib.vercel.app)
 
 ## Why Round QR Studio?
 
@@ -38,7 +38,7 @@ Everything is generated locally in the browser. The app does not upload QR paylo
 
 ### Requirements
 
-- Node.js 22.13 or newer
+- Node.js 22.13 or newer within the Node.js 22 release line
 - npm 10 or newer
 
 ```bash
@@ -66,10 +66,22 @@ components/ui/       Shared interface primitives
 lib/                 Small shared utilities
 public/              Icons and social preview assets
 .github/             CI and contribution templates
-.openai/              Sites deployment configuration
+vercel.json          Vercel build and static hosting configuration
 ```
 
 The app is built with React, TypeScript, Vinext, Tailwind CSS, Base UI/shadcn, `qr-code-styling`, and Iconify.
+
+## Deployment
+
+The production app is hosted on [Vercel](https://round-qr-studio-hlib.vercel.app).
+`npm run build` exports static HTML and browser assets to `dist/client`.
+QR generation stays in the browser and does not require a backend or database.
+Run `npm start` to preview the built site locally.
+
+The Vercel project uses Node.js 22, `npm ci`, and the settings in `vercel.json`.
+To publish from a linked checkout, run `npx vercel deploy --prod`.
+Automatic deployments from `main` require granting the Vercel GitHub integration
+access to this repository and connecting it in the project's Git settings.
 
 ## Contributing and security
 

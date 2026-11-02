@@ -1,0 +1,9 @@
+node_modules/
+dist/
+work/
+.env*
+.wrangler/
+.vinext/
+.next/
+*.tsbuildinfo
+github-public-repositories.jpg

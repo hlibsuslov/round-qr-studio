@@ -12,7 +12,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://round-qr-studio.hlixli.chatgpt.site'),
+  metadataBase: new URL('https://round-qr-studio-hlib.vercel.app'),
   title: 'Round QR Studio — Shape your scan',
   description:
     'Create shaped QR codes for links, contacts, email, phone, SMS, Wi-Fi and calendar events.',
