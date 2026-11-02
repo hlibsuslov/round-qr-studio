@@ -79,9 +79,9 @@ QR generation stays in the browser and does not require a backend or database.
 Run `npm start` to preview the built site locally.
 
 The Vercel project uses Node.js 22, `npm ci`, and the settings in `vercel.json`.
-To publish from a linked checkout, run `npx vercel deploy --prod`.
-Automatic deployments from `main` require granting the Vercel GitHub integration
-access to this repository and connecting it in the project's Git settings.
+The Vercel project is connected to this repository and automatically deploys
+changes pushed to `main`. To publish manually from a linked checkout, run
+`npx vercel deploy --prod`.
 
 ## Contributing and security
 
